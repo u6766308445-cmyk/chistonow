@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chistonow</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:#F2F7F6;--sf:#fff;--ink:#10292F;--mu:#5C7479;--ac:#0E7C86;--on:#fff;--ln:#D5E3E2;--er:#B4452F}
+:root[data-theme=dark]{--bg:#0E1A1D;--sf:#162528;--ink:#E6F1F0;--mu:#8FA8AC;--ac:#4CC3CC;--on:#0E1A1D;--ln:#27393D;--er:#E58A73}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:0 16px calc(96px + env(safe-area-inset-bottom,0px))}
+main{max-width:480px;margin:0 auto}
+header{padding:28px 0 8px}
+header small{color:var(--mu);font-size:14px}
+h1{font-size:30px;line-height:1.15;margin:6px 0 0;letter-spacing:-.02em}
+section{margin-top:28px}
+h2{font-size:18px;margin:0 0 4px}
+.hint{color:var(--mu);font-size:14px;margin:0 0 12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1.5px solid var(--ln);background:var(--sf);color:var(--ink);border-radius:999px;padding:10px 16px;font:inherit;cursor:pointer}
+.chip[aria-pressed=true]{background:var(--ac);border-color:var(--ac);color:var(--on);font-weight:600}
+.notice{margin-top:12px;padding:12px 14px;border-radius:12px;border:1.5px solid var(--er);color:var(--er);font-size:15px}
+.locked{opacity:.35;pointer-events:none}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--sf);border-radius:14px;padding:12px 14px;margin-bottom:8px}
+.row b{font-weight:600}
+.row span{display:block;color:var(--mu);font-size:14px}
+.qty{display:flex;align-items:center;gap:10px}
+.qty button{width:36px;height:36px;border-radius:50%;border:1.5px solid var(--ln);background:transparent;color:var(--ink);font-size:20px;cursor:pointer}
+.qty output{min-width:18px;text-align:center;font-weight:600}
+label{display:block;font-size:14px;color:var(--mu);margin:12px 0 4px}
+input,textarea{width:100%;border:1.5px solid var(--ln);border-radius:12px;background:var(--sf);color:var(--ink);padding:12px 14px;font:inherit}
+textarea{resize:vertical;min-height:72px}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--ln);padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px))}
+.bar>div{max-width:480px;margin:0 auto}
+.go{width:100%;border:0;border-radius:14px;padding:15px;background:var(--ac);color:var(--on);font:inherit;font-weight:700;cursor:pointer}
+.go:disabled{opacity:.4;cursor:not-allowed}
+.err{color:var(--er);font-size:14px;min-height:20px;margin:0 0 6px}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<header><small>Chistonow</small><h1>Химчистка мягкой мебели у вас дома</h1></header>
+
+<section>
+<h2>Где вы находитесь?</h2>
+<p class="hint">Выезжаем только в эти районы Санкт-Петербурга.</p>
+<div class="chips" id="zones"></div>
+<div class="notice" id="out" hidden>Пока мы не работаем в вашем районе. Работаем на Петроградской стороне, Крестовском, Каменном островах и Петровской косе.</div>
+</section>
+
+<div id="form" class="locked">
+<section>
+<h2>Что почистить</h2>
+<p class="hint">Цены ориентировочные, точную назовёт мастер после осмотра.</p>
+<div id="items"></div>
+</section>
+
+<section>
+<h2>Когда приехать</h2>
+<label for="date">Дата</label>
+<input type="date" id="date">
+<label>Время</label>
+<div class="chips" id="slots"></div>
+</section>
+
+<section>
+<h2>Адрес и контакты</h2>
+<label for="addr">Улица, дом, квартира</label>
+<input id="addr" autocomplete="street-address">
+<label for="phone">Телефон</label>
+<input id="phone" type="tel" inputmode="tel" placeholder="+7" autocomplete="tel">
+<label for="note">Комментарий (необязательно)</label>
+<textarea id="note" placeholder="Например: пятно от кофе на подлокотнике"></textarea>
+<p class="hint" style="margin-top:12px">После отправки заказа бот попросит прислать фото мебели.</p>
+</section>
+</div>
+</main>
+
+<div class="bar"><div>
+<p class="err" id="err"></p>
+<button class="go" id="go" disabled>Отправить заказ</button>
+</div></div>
+
+<script>
+const tg = window.Telegram && window.Telegram.WebApp;
+document.documentElement.dataset.theme = (tg && tg.colorScheme) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+if (tg) { tg.ready(); tg.expand(); }
+
+const ZONES = ['Петроградский район','Крестовский остров','Каменный остров','Петровская коса','Другой район'];
+const ITEMS = [
+  {id:'sofa2',name:'Диван двухместный',price:2500},
+  {id:'sofa3',name:'Диван трёхместный',price:3200},
+  {id:'corner',name:'Угловой диван',price:4500},
+  {id:'chair',name:'Кресло',price:1200},
+  {id:'pouf',name:'Пуф',price:600},
+  {id:'seat',name:'Стул с мягким сиденьем',price:400},
+  {id:'mattress',name:'Матрас',price:2200}
+];
+const SLOTS = ['10–12','12–14','14–16','16–18','18–20'];
+const st = {zone:null, qty:{}, slot:null};
+const qz = new URLSearchParams(location.search).get('zone');
+if (ZONES.includes(qz)) st.zone = qz;
+const $ = id => document.getElementById(id);
+const rub = n => n.toLocaleString('ru-RU') + ' ₽';
+
+function chips(el, list, key, after){
+  el.innerHTML = '';
+  list.forEach(v => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.textContent = v;
+    b.setAttribute('aria-pressed', st[key] === v);
+    b.onclick = () => { st[key] = v; chips(el, list, key, after); after(); };
+    el.appendChild(b);
+  });
+}
+function total(){ return ITEMS.reduce((s,i) => s + (st.qty[i.id]||0) * i.price, 0); }
+function inZone(){ return st.zone && st.zone !== 'Другой район'; }
+
+function renderItems(){
+  $('items').innerHTML = '';
+  ITEMS.forEach(i => {
+    const r = document.createElement('div'); r.className = 'row';
+    r.innerHTML = '<div><b>' + i.name + '</b><span>от ' + rub(i.price) + '</span></div>' +
+      '<div class="qty"><button type="button" aria-label="Меньше">−</button><output>' + (st.qty[i.id]||0) + '</output><button type="button" aria-label="Больше">+</button></div>';
+    const [m,p] = r.querySelectorAll('button');
+    m.onclick = () => { st.qty[i.id] = Math.max(0,(st.qty[i.id]||0)-1); renderItems(); update(); };
+    p.onclick = () => { st.qty[i.id] = Math.min(20,(st.qty[i.id]||0)+1); renderItems(); update(); };
+    $('items').appendChild(r);
+  });
+}
+
+function problem(){
+  if (!st.zone) return 'Выберите район';
+  if (!inZone()) return '';
+  if (!total()) return 'Добавьте хотя бы один предмет';
+  if (!$('date').value) return 'Выберите дату';
+  if (!st.slot) return 'Выберите время';
+  if ($('addr').value.trim().length < 5) return 'Укажите адрес';
+  if ($('phone').value.replace(/\D/g,'').length < 10) return 'Укажите телефон';
+  return null;
+}
+function update(){
+  $('out').hidden = !(st.zone === 'Другой район');
+  $('form').classList.toggle('locked', !inZone());
+  const p = problem();
+  $('err').textContent = p || '';
+  $('go').disabled = p !== null;
+  $('go').textContent = total() ? 'Отправить заказ · ' + rub(total()) : 'Отправить заказ';
+}
+
+$('date').min = new Date().toISOString().slice(0,10);
+['date','addr','phone','note'].forEach(id => $(id).addEventListener('input', update));
+chips($('zones'), ZONES, 'zone', update);
+chips($('slots'), SLOTS, 'slot', update);
+renderItems(); update();
+
+$('go').onclick = () => {
+  if (problem() !== null) return;
+  const order = {
+    zone: st.zone,
+    items: ITEMS.filter(i => st.qty[i.id]).map(i => ({id:i.id, name:i.name, qty:st.qty[i.id], price:i.price})),
+    total: total(), date: $('date').value, time: st.slot,
+    address: $('addr').value.trim(), phone: $('phone').value.trim(), note: $('note').value.trim()
+  };
+  if (tg && tg.sendData) tg.sendData(JSON.stringify(order));
+  else alert(JSON.stringify(order, null, 2));
+};
+</script>
+</body>
+</html>
